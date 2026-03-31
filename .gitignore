@@ -1,1 +1,9 @@
 *.fa
+*.fastq.gz
+*.bam
+*.bai
+*.vcf
+*.html
+*.zip
+*.tsv
+.snakemake/

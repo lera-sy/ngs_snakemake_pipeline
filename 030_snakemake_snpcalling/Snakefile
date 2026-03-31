@@ -1,0 +1,89 @@
+SAMPLES = ["TLE66_N", "TLE66_T"]
+
+rule all:	
+	input:
+		expand("100.final/{sample}.snps.annotated.tsv", sample=SAMPLES)
+
+rule fastqc:
+    input:
+        "{sample}.fastq"
+    output: 
+        "010.fastqc/{sample}_fastqc.html"
+    shell:
+        """ 
+        fastqc {input} --outdir 010.fastqc/
+        test -s {output}
+        """
+
+rule align:
+    input:
+        fastq="{sample}.fastq",
+        ref="/lustre1/project/stg_00079/teaching/hg38_9/chr9.fa"
+    output:
+        "020.align/{sample}.bam"
+    shell:
+        """
+        bwa mem {input.ref} {input.fastq} | samtools view -Sb - > {output}
+        test -s {output}
+        """
+
+rule sort_index:
+    input:
+        "020.align/{sample}.bam"
+    output:
+        bam="030.sort/{sample}.sorted.bam",
+        bai="030.sort/{sample}.sorted.bam.bai"
+    shell:
+        """
+        samtools sort {input} -o {output.bam}
+        samtools index {output.bam}
+        test -s {output.bam}
+        test -s {output.bai}
+        """
+
+rule call_variant:
+    input:
+        bam="030.sort/{sample}.sorted.bam",
+        ref="/lustre1/project/stg_00079/teaching/hg38_9/chr9.fa"
+    output:
+        "040.variants/{sample}.vcf"
+    shell:
+        """
+        bcftools mpileup -f {input.ref} {input.bam} | bcftools call -mv -o {output}
+        test -s {output}
+        """
+
+rule filter: 
+    input:
+        "040.variants/{sample}.vcf"
+    output:
+        "050.filter/{sample}.filtered.vcf"
+    shell:
+        """
+        vt decompose {input} | vt normalize -r /lustre1/project/stg_00079/teaching/hg38_9/chr9.fa - | bcftools filter -i 'QUAL>20 && DP>10' -o {output}
+        test -s {output}
+        """
+
+rule annotate: 
+    input: 
+        "050.filter/{sample}.filtered.vcf"
+    output:
+        "060.annotate/{sample}.annotate.vcf"
+    shell:
+        """
+        snpEff -dataDir /lustre1/project/stg_00079/teaching/snpeff_db hg38 {input} > {output}
+        test -s {output}
+        grep -q "ANN=" {output}
+        """
+rule to_tsv:
+    input:
+        "060.annotate/{sample}.annotate.vcf"
+    output:
+        "100.final/{sample}.snps.annotated.tsv"
+    shell:
+        """
+        echo -e "CHROM\tPOS\tREF\tALT\tQUAL\tANN" > {output}
+        bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/ANN\n' {input} >>{output}
+        test -s {output}
+        grep -q "CHROM" {output}
+        """
