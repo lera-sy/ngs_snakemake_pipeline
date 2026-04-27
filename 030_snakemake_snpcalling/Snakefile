@@ -2,7 +2,7 @@ SAMPLES = ["TLE66_N", "TLE66_T"]
 
 rule all:	
 	input:
-		expand("100.final/{sample}.snps.annotated.tsv", sample=SAMPLES)
+		"100.final/combined.snps.annotated.tsv"
 
 rule fastqc:
     input:
@@ -23,7 +23,7 @@ rule align:
         "020.align/{sample}.bam"
     shell:
         """
-        bwa mem {input.ref} {input.fastq} | samtools view -Sb - > {output}
+        bwa mem -R "@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}\\tLB:{wildcards.sample}\\tPL:ILLUMINA" {input.ref} {input.fastq} | samtools view -Sb - > {output}
         test -s {output}
         """
 
@@ -43,21 +43,22 @@ rule sort_index:
 
 rule call_variant:
     input:
-        bam="030.sort/{sample}.sorted.bam",
+        bams=expand("030.sort/{sample}.sorted.bam", sample=SAMPLES),
+        bais=expand("030.sort/{sample}.sorted.bam.bai", sample=SAMPLES),
         ref="/lustre1/project/stg_00079/teaching/hg38_9/chr9.fa"
     output:
-        "040.variants/{sample}.vcf"
+        "040.variants/combined.vcf"
     shell:
         """
-        bcftools mpileup -f {input.ref} {input.bam} | bcftools call -mv -o {output}
+        bcftools mpileup -f {input.ref} {input.bams} | bcftools call -mv -o {output}
         test -s {output}
         """
 
 rule filter: 
     input:
-        "040.variants/{sample}.vcf"
+        "040.variants/combined.vcf"
     output:
-        "050.filter/{sample}.filtered.vcf"
+        "050.filter/combined.filtered.vcf"
     shell:
         """
         vt decompose {input} | vt normalize -r /lustre1/project/stg_00079/teaching/hg38_9/chr9.fa - | bcftools filter -i 'QUAL>20 && DP>10' -o {output}
@@ -66,24 +67,26 @@ rule filter:
 
 rule annotate: 
     input: 
-        "050.filter/{sample}.filtered.vcf"
+        "050.filter/combined.filtered.vcf"
     output:
-        "060.annotate/{sample}.annotate.vcf"
+        vcf="060.annotate/combined.annotate.vcf",
+        stats="060.annotate/snpEff_summary.html"
     shell:
         """
-        snpEff -dataDir /lustre1/project/stg_00079/teaching/snpeff_db hg38 {input} > {output}
-        test -s {output}
-        grep -q "ANN=" {output}
+        snpEff -dataDir /lustre1/project/stg_00079/teaching/snpeff_db -stats {output.stats} hg38 {input} > {output.vcf}
+        test -s {output.vcf}
+        grep -q "ANN=" {output.vcf}
         """
+
 rule to_tsv:
     input:
-        "060.annotate/{sample}.annotate.vcf"
+        "060.annotate/combined.annotate.vcf"
     output:
-        "100.final/{sample}.snps.annotated.tsv"
+        "100.final/combined.snps.annotated.tsv"
     shell:
         """
-        echo -e "CHROM\tPOS\tREF\tALT\tQUAL\tANN" > {output}
-        bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%INFO/ANN\n' {input} >>{output}
+        echo -e "CHROM\\tPOS\\tREF\\tALT\\tQUAL\\tTLE66_N_GT\\tTLE66_T_GT\\tANN" > {output}
+        bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\t[%GT\\t]%INFO/ANN\\n' {input} >> {output}
         test -s {output}
         grep -q "CHROM" {output}
         """
