@@ -3,7 +3,9 @@ SAMPLES = ["TLE66_N", "TLE66_T"]
 rule all:
     input:
         "100.final/combined.snps.annotated.tsv",
-        "150.db/snps.sqlite"
+        "150.db/snps.sqlite",
+        "160.figures/fig1_impact_severity.svg",
+        "160.figures/fig2_top_genes.svg"
 
 rule fastqc:
     input:
@@ -108,4 +110,17 @@ rule to_db:
 
         echo "=== Test query 2: orphan effects (must be 0) ==="
         python -c "import sqlite3; print(sqlite3.connect('{output}').execute('SELECT COUNT(*) FROM Effect WHERE snp_id NOT IN (SELECT snp_id FROM SNP)').fetchone()[0])"
+        """
+rule plot_snps:
+    input:
+        db="150.db/snps.sqlite",
+        script="scripts/plot_snps.py"
+    output:
+        fig1="160.figures/fig1_impact_severity.svg",
+        fig2="160.figures/fig2_top_genes.svg"
+    shell:
+        """
+        python {input.script} {input.db} {output.fig1} {output.fig2}
+        test -s {output.fig1}
+        test -s {output.fig2}
         """
