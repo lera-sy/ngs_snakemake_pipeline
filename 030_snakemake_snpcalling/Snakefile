@@ -5,7 +5,8 @@ rule all:
         "100.final/combined.snps.annotated.tsv",
         "150.db/snps.sqlite",
         "160.figures/fig1_impact_severity.svg",
-        "160.figures/fig2_top_genes.svg"
+        "160.figures/fig2_top_genes.svg",  
+        "200.upload/upload.done" 
 
 rule fastqc:
     input:
@@ -17,6 +18,12 @@ rule fastqc:
         fastqc {input} --outdir 010.fastqc/
         test -s {output}
         """
+
+rule download_fastq:
+    output:
+        "{sample}.fastq"
+    shell:
+        "iron download /gbiomed/home/large_omics_course/fastq/{wildcards.sample}.fastq {output}"
 
 rule align:
     input:
@@ -111,6 +118,20 @@ rule to_db:
         echo "=== Test query 2: orphan effects (must be 0) ==="
         python -c "import sqlite3; print(sqlite3.connect('{output}').execute('SELECT COUNT(*) FROM Effect WHERE snp_id NOT IN (SELECT snp_id FROM SNP)').fetchone()[0])"
         """
+
+rule upload_vcf:
+    input:
+        "060.annotate/combined.annotate.vcf"
+    output:
+        touch("200.upload/upload.done")     # sentinel marker
+    params:
+        dest="/gbiomed/home/large_omics_course/output/r0609048"
+    shell:
+        """
+        iron mkdir {params.dest} || true
+        iron upload {input} {params.dest}/
+        """
+
 rule plot_snps:
     input:
         db="150.db/snps.sqlite",
